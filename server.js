@@ -8,6 +8,7 @@ const express = require("express");
 
 const { pool, initSchemaWithRetry } = require("./src/db");
 const { insertMetric } = require("./src/metricsStore");
+const { httpLoggingMiddleware } = require("./src/httpLogging");
 const todosRouter = require("./src/routes-todos");
 const configRouter = require("./src/routes-config");
 const metricsRouter = require("./src/routes-metrics");
@@ -17,6 +18,10 @@ const port = Number(process.env.PORT) || 3000;
 const repo = process.env.REPO_NAME || "todo-metrics-app";
 
 app.use(express.json());
+
+// Mounted before every route (including /healthz and static assets) so ALL
+// HTTP requests get an OpenTelemetry log record, not just /api/todos.
+app.use(httpLoggingMiddleware);
 
 app.get("/healthz", (_req, res) => {
   res.json({ status: "ok", repo });

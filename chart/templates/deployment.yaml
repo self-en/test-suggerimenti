@@ -55,6 +55,12 @@ spec:
           value: {{ .Values.otel.endpoint | quote }}
         - name: OTEL_SERVICE_NAME
           value: {{ .Release.Name | quote }}
+        # Explicit rather than relying on the spec default, so this keeps
+        # working even if a future SDK version changes it. The app emits real
+        # log records per HTTP request via the Logs API (src/httpLogging.js) -
+        # auto-instrumentation alone only produces traces, not logs.
+        - name: OTEL_LOGS_EXPORTER
+          value: "otlp"
         # Zero-code OpenTelemetry: preload the auto-instrumentation register hook
         # (added to package.json), which instruments express/pg/http and exports
         # traces + metrics + logs over OTLP to the endpoint above. Gated on
