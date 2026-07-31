@@ -21,6 +21,15 @@ router.use(async (req, res, next) => {
 
   const randomFail = cfg.errorRate > 0 && Math.random() < cfg.errorRate;
   if (forceFail || randomFail) {
+    // Log it like any other failure (not just a 503 response) so it shows up
+    // with an error status both on the console and in the per-request OTel
+    // log record emitted by httpLoggingMiddleware, which derives its severity
+    // from res.statusCode - already set here before that middleware's
+    // "finish" handler runs.
+    console.error(
+      `[todos] chaos: simulated failure on ${req.method} ${req.originalUrl}`,
+      { forceFail, randomFail }
+    );
     return res.status(503).json({ error: "Errore simulato (chaos testing)" });
   }
   next();
