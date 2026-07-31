@@ -1,0 +1,6 @@
+apiVersion: v2
+name: app
+description: Branch-preview app scaffolded by the self-en platform (test-suggerimenti)
+type: application
+version: 0.1.0
+appVersion: "1.0"

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+      annotations:
+        # Set to the per-commit sha by the ApplicationSet - forces a rollout on
+        # every push even if image.tag somehow didn't change (belt-and-suspenders).
+        self-en.local/commit-sha: {{ .Values.commitSha | quote }}
+    spec:
+      {{- if .Values.imagePullSecret.enabled }}
+      imagePullSecrets:
+      - name: {{ .Values.imagePullSecret.name }}
+      {{- end }}
+      containers:
+      - name: app
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        # Always re-check the registry on (re)start so a new digest behind the
+        # pinned tag is picked up.
+        imagePullPolicy: Always
+        ports:
+        - containerPort: {{ .Values.containerPort }}
+        env:
+        - name: PORT
+          value: {{ .Values.containerPort | quote }}
+        - name: REPO_NAME
+          value: {{ .Release.Name | quote }}
+        {{- if .Values.postgres.host }}
+        # This branch's own database (created by the PreSync hook). Passed both as
+        # a DATABASE_URL and as discrete PG* vars - the app prefers the discrete
+        # vars, which avoid URL-encoding pitfalls in the generated password.
+        - name: PGHOST
+          value: {{ .Values.postgres.host | quote }}
+        - name: PGPORT
+          value: "5432"
+        - name: PGUSER
+          value: {{ .Values.postgres.appUser | quote }}
+        - name: PGPASSWORD
+          value: {{ .Values.postgres.appPassword | quote }}
+        - name: PGDATABASE
+          value: {{ .Release.Name | replace "-" "_" | quote }}
+        - name: DATABASE_URL
+          value: "postgresql://{{ .Values.postgres.appUser }}:{{ .Values.postgres.appPassword }}@{{ .Values.postgres.host }}:5432/{{ .Release.Name | replace "-" "_" }}"
+        {{- end }}
+        {{- if .Values.otel.endpoint }}
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ .Values.otel.endpoint | quote }}
+        - name: OTEL_SERVICE_NAME
+          value: {{ .Release.Name | quote }}
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.containerPort }}
+          initialDelaySeconds: 3
+          periodSeconds: 10
