@@ -1,61 +1,64 @@
-// Minimal starter app scaffolded by the self-en platform. Serves a landing page
-// and a /healthz probe, and (if a database is wired) does a one-off SELECT 1 at
-// startup without crashing if the DB is unreachable.
+// Todo app with DB persistence whose real purpose is to generate realistic-
+// looking (and controllably bad) traffic - slow API responses, slow DB
+// queries, occasional errors - so a metrics-analysis function has something
+// real to chew on. See README.md for the full API.
+
+const path = require("path");
 const express = require("express");
+
+const { pool, initSchemaWithRetry } = require("./src/db");
+const { insertMetric } = require("./src/metricsStore");
+const todosRouter = require("./src/routes-todos");
+const configRouter = require("./src/routes-config");
+const metricsRouter = require("./src/routes-metrics");
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
-const repo = process.env.REPO_NAME || "test-suggerimenti";
+const repo = process.env.REPO_NAME || "todo-metrics-app";
 
-app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
+app.use(express.json());
 
-app.get("/", (_req, res) => {
-  res
-    .type("html")
-    .send(
-      `<!doctype html>
-<html lang="it">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${repo}</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; background: #0f172a; color: #e2e8f0; }
-      .card { text-align: center; padding: 2rem 3rem; }
-      h1 { margin: 0 0 .5rem; font-size: 2rem; }
-      p { margin: .25rem 0; color: #94a3b8; }
-      code { background: #1e293b; padding: .15rem .4rem; border-radius: .3rem; }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Ciao da ${repo} 👋</h1>
-      <p>Questa anteprima è stata creata dalla piattaforma self-en.</p>
-      <p>Modifica <code>server.js</code> e fai push: la tua anteprima si aggiorna da sola.</p>
-    </div>
-  </body>
-</html>`
-    );
+app.get("/healthz", (_req, res) => {
+  res.json({ status: "ok", repo });
 });
+
+// Records one row per /api/todos request into request_metrics, capturing
+// both the total duration and whatever simulated delay the chaos middleware
+// (in routes-todos.js) and the repo layer (in todosRepo.js) attached to
+// req.metricsCtx along the way. Mounted first so its timer wraps everything
+// downstream, including the simulated latency.
+app.use("/api/todos", (req, res, next) => {
+  const startNs = process.hrtime.bigint();
+  res.on("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - startNs) / 1e6;
+    const ctx = req.metricsCtx || {};
+    const routePath = req.route
+      ? `/api/todos${req.route.path === "/" ? "" : req.route.path}`
+      : req.originalUrl.split("?")[0];
+
+    insertMetric(pool, {
+      method: req.method,
+      path: routePath,
+      statusCode: res.statusCode,
+      durationMs,
+      dbDurationMs: ctx.dbDurationMs || 0,
+      simulatedApiDelayMs: ctx.simulatedApiDelayMs || 0,
+      simulatedDbDelayMs: ctx.simulatedDbDelayMs || 0,
+      isError: res.statusCode >= 400,
+    }).catch((err) => console.error("[metrics] insert failed:", err.message));
+  });
+  next();
+});
+
+app.use("/api/todos", todosRouter);
+app.use("/api/config", configRouter);
+app.use("/api/metrics", metricsRouter);
+
+app.use(express.static(path.join(__dirname, "public")));
 
 app.listen(port, () => console.log(`[app] listening on :${port}`));
 
-// Best-effort DB connectivity check. Prefers discrete PG* env vars (set by the
-// chart) to avoid URL-encoding issues; falls back to DATABASE_URL. Never crashes
-// the process - a preview should come up even if the DB isn't ready yet.
-async function checkDb() {
-  const hasDiscrete = !!process.env.PGHOST;
-  const hasUrl = !!process.env.DATABASE_URL;
-  if (!hasDiscrete && !hasUrl) return;
-  try {
-    const { Pool } = require("pg");
-    const pool = hasDiscrete ? new Pool() : new Pool({ connectionString: process.env.DATABASE_URL });
-    await pool.query("SELECT 1");
-    console.log("[app] database connection ok");
-    await pool.end();
-  } catch (err) {
-    console.error("[app] database check failed (continuing):", err.message);
-  }
-}
-
-void checkDb();
+// Best-effort: create the schema in the background, retrying, without
+// blocking the HTTP server from coming up (so /healthz and readinessProbe
+// succeed even if the branch database is still being provisioned).
+void initSchemaWithRetry();
