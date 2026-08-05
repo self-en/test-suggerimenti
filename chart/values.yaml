@@ -51,3 +51,10 @@ postgres:
   appUser: ""
   appPassword: ""
   adminPassword: ""
+
+# Configurazione applicativa (variabili d'ambiente) gestita dalla UI di nedo:
+# base64 di un oggetto JSON {CHIAVE: valore}, riempito per-branch
+# dall'ApplicationSet. Vuoto = nessun Secret, nessun envFrom.
+# NON mettere segreti qui: finirebbero in git.
+appEnv:
+  encoded: ""

@@ -23,6 +23,14 @@ spec:
       containers:
       - name: app
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        {{- if (.Values.appEnv | default dict).encoded }}
+        # self-en-app-env: variabili configurate dalla UI di nedo (vedi
+        # app-env-secret.yaml). Il nome del Secret porta l'hash del contenuto,
+        # cosi' un cambio di configurazione fa ripartire davvero i pod.
+        envFrom:
+        - secretRef:
+            name: {{ .Release.Name }}-env-{{ (.Values.appEnv | default dict).encoded | sha256sum | trunc 10 }}
+        {{- end }}
         # Always re-check the registry on (re)start so a new digest behind the
         # pinned tag is picked up.
         imagePullPolicy: Always
