@@ -16,7 +16,7 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
-import Fastify, { LogController } from "fastify";
+import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
 import { registerPlatformConfig } from "./platform/config";
 import { dbStatus, initSchemaWithRetry } from "./db";
@@ -32,11 +32,14 @@ const repo = process.env.REPO_NAME || "test-suggerimenti";
 // record per request ourselves (see the onResponse hook below), with a severity
 // derived from the status code - the built-in pair logs at `info` whatever the
 // outcome, so a 503 would not show up as an error in Loki/Grafana.
-// Passed via `logController` rather than the top-level `disableRequestLogging`,
-// which is deprecated in Fastify 5 (FSTDEP023) and gone in Fastify 6.
+// Passed via the top-level `disableRequestLogging` flag: it's deprecated in
+// Fastify 5 (emits FSTDEP023 once at startup, harmless noise) and removed only
+// in Fastify 6, but it's the only stable/documented way to do this on the 5.x
+// line the package depends on (`^5.2.1`). Revisit if/when this migrates to
+// Fastify 6.
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL || "info" },
-  logController: new LogController({ disableRequestLogging: true }),
+  disableRequestLogging: true,
 });
 
 // Contratto di configurazione con la piattaforma: espone GET /_self-en/config e,

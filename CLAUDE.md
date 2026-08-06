@@ -192,16 +192,21 @@ Fastify) e portano il `trace_id`/`span_id` della richiesta attiva: **usa il logg
 di Fastify, non `console.log`** (quest'ultimo NON viene inviato via OTLP). È per
 questo che `src/db.ts` riceve il logger invece di stampare da sé.
 
-Il logging automatico di Fastify è **disattivato**
-(`logController: new LogController({ disableRequestLogging: true })`) e sostituito
-da un hook `onResponse` in `src/server.ts` che emette **un solo record per
-richiesta** con la severità derivata dallo status: 5xx → `error`, 4xx → `warn`,
-resto → `info`. Il default di Fastify logga a `info` qualunque sia l'esito, quindi
-una richiesta fallita non sarebbe un errore in Grafana — che è esattamente ciò che
-serve vedere qui, visto che questa app gli errori li produce apposta.
+Il logging automatico di Fastify è **disattivato** (flag top-level
+`disableRequestLogging: true` passato a `Fastify({ ... })` in `src/server.ts`)
+e sostituito da un hook `onResponse` in `src/server.ts` che emette **un solo
+record per richiesta** con la severità derivata dallo status: 5xx → `error`,
+4xx → `warn`, resto → `info`. Il default di Fastify logga a `info` qualunque
+sia l'esito, quindi una richiesta fallita non sarebbe un errore in Grafana —
+che è esattamente ciò che serve vedere qui, visto che questa app gli errori li
+produce apposta.
 
-Attenzione: `disableRequestLogging` come opzione top-level è deprecata in Fastify 5
-(FSTDEP023) e rimossa in Fastify 6 — da qui il passaggio da `logController`.
+Attenzione: `disableRequestLogging` come opzione top-level è deprecata in
+Fastify 5 (avviso `FSTDEP023` una tantum all'avvio, rumore innocuo — non un
+errore) e verrà rimossa solo in Fastify 6. È comunque l'unica via stabile e
+documentata per ottenere questo comportamento sulla riga 5.x dichiarata in
+`package.json` (`^5.2.1`); da riconsiderare solo in caso di futura migrazione a
+Fastify 6.
 
 ## Sviluppo locale
 
