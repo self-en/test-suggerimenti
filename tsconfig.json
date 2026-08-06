@@ -1,0 +1,16 @@
+{
+  "//": "Backend build. Emits CommonJS into build/ so OpenTelemetry's require-based auto-instrumentation can patch fastify/pg/pino (see src/instrumentation.ts).",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "build",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

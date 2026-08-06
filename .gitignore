@@ -1,4 +1,8 @@
 node_modules/
+build/
+dist/
+.vite/
+*.tsbuildinfo
 npm-debug.log*
 .env
 .DS_Store

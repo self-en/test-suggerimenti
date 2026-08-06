@@ -23,17 +23,20 @@ spec:
       containers:
       - name: app
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        # Always re-check the registry on (re)start so a new digest behind the
+        # pinned tag is picked up.
+        imagePullPolicy: Always
         {{- if (.Values.appEnv | default dict).encoded }}
         # self-en-app-env: variabili configurate dalla UI di nedo (vedi
-        # app-env-secret.yaml). Il nome del Secret porta l'hash del contenuto,
-        # cosi' un cambio di configurazione fa ripartire davvero i pod.
+        # app-env-secret.yaml). Il nome porta l'hash del contenuto, cosi' un
+        # cambio di configurazione cambia il pod template e i pod ripartono.
+        # Attenzione: le `env:` esplicite qui sotto VINCONO su envFrom, quindi le
+        # variabili del contratto (PG*/DATABASE_URL/OTEL_*/PORT/...) non sono
+        # sovrascrivibili dalla configurazione - nedo le rifiuta a monte.
         envFrom:
         - secretRef:
             name: {{ .Release.Name }}-env-{{ (.Values.appEnv | default dict).encoded | sha256sum | trunc 10 }}
         {{- end }}
-        # Always re-check the registry on (re)start so a new digest behind the
-        # pinned tag is picked up.
-        imagePullPolicy: Always
         ports:
         - containerPort: {{ .Values.containerPort }}
         env:
@@ -63,20 +66,34 @@ spec:
           value: {{ .Values.otel.endpoint | quote }}
         - name: OTEL_SERVICE_NAME
           value: {{ .Release.Name | quote }}
-        # Explicit rather than relying on the spec default, so this keeps
-        # working even if a future SDK version changes it. The app emits real
-        # log records per HTTP request via the Logs API (src/httpLogging.js) -
-        # auto-instrumentation alone only produces traces, not logs.
+        # otel.endpoint is Alloy's OTLP *HTTP* port (4318), so pin the protocol to
+        # http/protobuf rather than rely on the SDK default (a future flip to grpc
+        # would silently hit the wrong port). One endpoint carries all 3 signals;
+        # Alloy fans them out to Tempo/Prometheus/Loki.
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        # Emit all three signals over OTLP. These are the SDK defaults today, set
+        # explicitly so "traces + metrics + logs" is intent, not luck.
+        - name: OTEL_TRACES_EXPORTER
+          value: "otlp"
+        - name: OTEL_METRICS_EXPORTER
+          value: "otlp"
         - name: OTEL_LOGS_EXPORTER
           value: "otlp"
-        # Zero-code OpenTelemetry: preload the auto-instrumentation register hook
-        # (added to package.json), which instruments express/pg/http and exports
-        # traces + metrics + logs over OTLP to the endpoint above. Gated on
-        # otel.endpoint (only the `main` branch, per the ApplicationSet), so on
-        # every other branch NODE_OPTIONS is unset, the SDK is never loaded, and
-        # nothing tries to export to a missing collector.
+        # Zero-code OpenTelemetry: preload the app's own instrumentation bootstrap
+        # (build/instrumentation.js, compiled from src/instrumentation.ts) BEFORE
+        # the app loads fastify/pg/pino, so the SDK can patch them. It registers
+        # the standard auto set (http/pg/runtime metrics/...) PLUS a Fastify
+        # instrumentation (request-handler/route spans) - the register meta-package
+        # ships no Fastify instrumentation, which is why we bootstrap it ourselves.
+        # It exports traces + metrics + logs over OTLP to the endpoint above; logs
+        # flow via the pino instrumentation (the app logs through Fastify's pino,
+        # see src/server.ts) carrying the active trace context - bare console.log is
+        # NOT bridged to OTLP. Gated on otel.endpoint (only the `main` branch, per
+        # the ApplicationSet), so on every other branch NODE_OPTIONS is unset, the
+        # SDK is never loaded, and nothing tries to export to a missing collector.
         - name: NODE_OPTIONS
-          value: "--require @opentelemetry/auto-instrumentations-node/register"
+          value: "--require /app/build/instrumentation.js"
         {{- end }}
         readinessProbe:
           httpGet:
