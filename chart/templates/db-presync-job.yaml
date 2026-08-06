@@ -1,10 +1,11 @@
 {{- if .Values.postgres.host }}
-# Creates this branch's own database (one database per branch inside the shared
-# Postgres cluster) BEFORE the app syncs. An ArgoCD PreSync hook, NOT a Helm
+# Creates this branch's own database (one database per branch inside this
+# project's dedicated Postgres instance) BEFORE the app syncs, so production
+# ('main') stays isolated. An ArgoCD PreSync hook, NOT a Helm
 # hook, since these charts are applied by ArgoCD. Cleanup on branch deletion is
 # deliberately NOT a PreDelete hook here (ArgoCD can't render hook manifests once
 # the branch is gone from git) - a CronJob reconciler in the platform drops
-# orphaned preview_* databases instead.
+# orphaned p_* databases instead.
 apiVersion: batch/v1
 kind: Job
 metadata:

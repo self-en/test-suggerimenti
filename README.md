@@ -1,13 +1,13 @@
-# todo-metrics-app
+# test-suggerimenti
 
 Todo app minimale con persistenza su **Postgres**, pensata soprattutto per
 generare traffico "controllabilmente cattivo" — API lente, query DB lente,
 errori casuali — utile per testare una funzione di analisi delle metriche.
 
-Scaffolded originariamente dalla piattaforma **self-en** (branch preview con
-Postgres per-branch): il deploy contract (`server.js`/`package.json` in root,
-`/healthz`, `PORT`, `PGHOST`/`DATABASE_URL`) è invariato, `Dockerfile` e
-`chart/` non sono stati toccati.
+Stack allineato allo scaffold della piattaforma **self-en**: **TypeScript**,
+backend **Fastify**, frontend **React** (Vite), una sola immagine Docker,
+contratto di configurazione (`self-en.json` + `src/platform/config.ts`) e
+strumentazione OpenTelemetry sul branch `main`.
 
 ## Come funziona
 
@@ -21,20 +21,21 @@ Postgres per-branch): il deploy contract (`server.js`/`package.json` in root,
     (simula una query lenta), sommato al vero tempo di esecuzione della query;
   - `errorRate` — probabilità (0–1) che una richiesta fallisca con `503`.
 - **Metriche** (`/api/metrics`): ogni richiesta a `/api/todos*` scrive una
-  riga in `request_metrics` (metodo, path normalizzato, status, durata
-  totale, durata DB, quanto ritardo era simulato, se è un errore).
+  riga in `request_metrics` (metodo, path normalizzato sulla rotta, status,
+  durata totale, durata DB, quanto ritardo era simulato, se è un errore).
   - `GET /api/metrics/summary?minutes=60` — per ciascun `method+path`:
     count, avg/min/max, **p50/p95/p99** (calcolati da Postgres con
     `percentile_cont`), avg durata DB, conteggio errori.
   - `GET /api/metrics/timeseries?minutes=60` — stessa cosa ma bucketizzata
     al minuto, comoda per grafici a serie temporale.
-  - `GET /api/metrics/raw?limit=100` — righe grezze, per chi vuole
-    ricalcolare le proprie aggregazioni.
-  - `DELETE /api/metrics` — svuota la tabella (utile prima di un run di test
-    pulito).
+  - `GET /api/metrics/raw?limit=100` — righe grezze.
+  - `DELETE /api/metrics` — svuota la tabella (utile prima di un run pulito).
 
-Una UI minimale in `public/` permette di: gestire i todo, configurare il
-chaos e vedere la tabella delle metriche in tempo reale (con auto-refresh).
+La UI React in `web/` permette di gestire i todo, configurare il chaos e vedere
+la tabella delle metriche in tempo reale (con auto-refresh).
+
+`/api/config` e `/api/metrics` **non** sono soggette al chaos: si deve sempre
+poter spegnere la manopola dalla UI, anche mentre i todo sono lenti o rotti.
 
 ## Test deterministici per singola richiesta
 
@@ -59,8 +60,13 @@ docker run -d --name pg-todo -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
 
 npm install
 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres PGDATABASE=postgres \
-  npm start
-# http://localhost:3000
+  npm run dev    # Vite (frontend, :5173) + Fastify (backend, :3000), proxy /api
+```
+
+Come in produzione (una sola porta, frontend servito da Fastify):
+
+```bash
+npm run build && npm start   # http://localhost:3000
 ```
 
 Lo schema (`todos`, `request_metrics`) viene creato automaticamente
@@ -84,20 +90,34 @@ curl localhost:3000/api/metrics/summary?minutes=5
 
 ## Layout
 
-- `server.js` — entrypoint: monta le rotte, il middleware di timing/metriche,
-  serve `public/` e avvia l'init dello schema in background.
-- `src/db.js` — pool Postgres + creazione schema con retry.
-- `src/config.js` — config chaos in-memory (get/update/reset, validata).
-- `src/simulate.js` — helper di ritardo/errore artificiali.
-- `src/todosRepo.js` — query dei todo, con simulazione di query lenta.
-- `src/metricsStore.js` — insert + query di aggregazione delle metriche.
-- `src/routes-todos.js`, `src/routes-config.js`, `src/routes-metrics.js` —
-  router Express.
-- `public/` — UI statica (todo list, pannello chaos, tabella metriche).
+- `src/server.ts` — istanza Fastify: logging per richiesta, `/healthz`,
+  `/api/info`, registrazione dei plugin di rotte, static + fallback SPA.
+- `src/routes/todos.ts` — `/api/todos` e gli hook che valgono solo lì (chaos,
+  guardia DB, scrittura della riga di metrica).
+- `src/routes/chaos.ts`, `src/routes/metrics.ts` — `/api/config`, `/api/metrics`.
+- `src/chaosConfig.ts` — config chaos in-memory (get/update/reset, validata).
+- `src/simulate.ts` — helper di ritardo/errore artificiali.
+- `src/todosRepo.ts` — query dei todo, con simulazione di query lenta.
+- `src/metricsStore.ts` — insert + query di aggregazione delle metriche.
+- `src/db.ts` — pool Postgres + creazione schema con retry.
+- `src/instrumentation.ts` — bootstrap OpenTelemetry (solo su `main`).
+- `src/platform/config.ts` — modulo della piattaforma, non modificare.
+- `web/` — frontend React (`App.tsx`, `Todos.tsx`, `ChaosPanel.tsx`,
+  `MetricsPanel.tsx`, `api.ts`, `App.css`), compilato da Vite in `dist/`.
+- `chart/` — Helm chart distribuito dalla piattaforma.
+- `CLAUDE.md` / `.claude/instructions.md` — guida per Claude.
 
-## Deploy (invariato)
+## Osservabilità (automatica sul branch `main`)
 
-- Push di un branch → CI builda l'immagine Docker → ArgoCD deploya
-  `chart/`, con una PreSync job che crea il database Postgres di quel branch
-  e lo passa via `PGHOST`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`/`DATABASE_URL`.
-- Elimina il branch → preview e database vengono ripuliti automaticamente.
+Sul solo branch `main` trace, metriche e log vanno via OTLP al collector della
+piattaforma (Alloy → Tempo / Prometheus / Loki). I log passano dal logger `pino`
+di Fastify (`request.log`), quindi portano il trace context; un hook `onResponse`
+emette un record per richiesta con severità derivata dallo status (5xx → error).
+Dettagli in `CLAUDE.md`.
+
+## Deploy
+
+- Push di un branch → la CI verifica il contratto (`npm run check:contract`),
+  builda l'immagine Docker multi-arch e la pubblica su GHCR → ArgoCD deploya
+  `chart/`, con una PreSync job che crea il database Postgres di quel branch.
+- Elimina il branch → ambiente e database vengono ripuliti automaticamente.

@@ -2,7 +2,55 @@
 // by the metrics-analysis function this app exists to exercise. Percentiles
 // are computed by Postgres itself (percentile_cont) rather than in JS.
 
-async function insertMetric(pool, entry) {
+import type { Pool } from "pg";
+
+export interface MetricEntry {
+  method: string;
+  path: string;
+  statusCode: number;
+  durationMs: number;
+  dbDurationMs?: number;
+  simulatedApiDelayMs?: number;
+  simulatedDbDelayMs?: number;
+  isError?: boolean;
+}
+
+export interface RouteSummary {
+  method: string;
+  path: string;
+  count: number;
+  avg_ms: string;
+  min_ms: string;
+  max_ms: string;
+  p50_ms: string;
+  p95_ms: string;
+  p99_ms: string;
+  avg_db_ms: string;
+  errors: number;
+}
+
+export interface TimeseriesPoint {
+  bucket: string;
+  count: number;
+  avg_ms: string;
+  p95_ms: string;
+  errors: number;
+}
+
+export interface RawMetricRow {
+  id: string;
+  ts: string;
+  method: string;
+  path: string;
+  status_code: number;
+  duration_ms: number;
+  db_duration_ms: number;
+  simulated_api_delay_ms: number;
+  simulated_db_delay_ms: number;
+  is_error: boolean;
+}
+
+export async function insertMetric(pool: Pool, entry: MetricEntry): Promise<void> {
   await pool.query(
     `INSERT INTO request_metrics
       (method, path, status_code, duration_ms, db_duration_ms,
@@ -21,8 +69,8 @@ async function insertMetric(pool, entry) {
   );
 }
 
-async function getSummary(pool, minutes) {
-  const { rows } = await pool.query(
+export async function getSummary(pool: Pool, minutes: number): Promise<RouteSummary[]> {
+  const { rows } = await pool.query<RouteSummary>(
     `SELECT
         method,
         path,
@@ -44,8 +92,8 @@ async function getSummary(pool, minutes) {
   return rows;
 }
 
-async function getTimeseries(pool, minutes) {
-  const { rows } = await pool.query(
+export async function getTimeseries(pool: Pool, minutes: number): Promise<TimeseriesPoint[]> {
+  const { rows } = await pool.query<TimeseriesPoint>(
     `SELECT
         date_trunc('minute', ts) AS bucket,
         count(*)::int AS count,
@@ -61,8 +109,8 @@ async function getTimeseries(pool, minutes) {
   return rows;
 }
 
-async function getRaw(pool, limit) {
-  const { rows } = await pool.query(
+export async function getRaw(pool: Pool, limit: number): Promise<RawMetricRow[]> {
+  const { rows } = await pool.query<RawMetricRow>(
     `SELECT id, ts, method, path, status_code, duration_ms, db_duration_ms,
             simulated_api_delay_ms, simulated_db_delay_ms, is_error
      FROM request_metrics
@@ -73,8 +121,6 @@ async function getRaw(pool, limit) {
   return rows;
 }
 
-async function resetMetrics(pool) {
+export async function resetMetrics(pool: Pool): Promise<void> {
   await pool.query("TRUNCATE TABLE request_metrics");
 }
-
-module.exports = { insertMetric, getSummary, getTimeseries, getRaw, resetMetrics };

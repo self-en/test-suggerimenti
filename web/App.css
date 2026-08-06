@@ -63,19 +63,31 @@ button {
   cursor: pointer;
 }
 button:hover { filter: brightness(1.1); }
-#config-reset, #metrics-reset { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 
 .hint, .status { color: var(--muted); font-size: .9rem; }
 code { background: #0b1220; padding: .1rem .3rem; border-radius: .3rem; }
 
-ul#todo-list { list-style: none; margin: 0; padding: 0; }
-ul#todo-list li {
+.badge {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: .35rem .8rem;
+  border-radius: 999px;
+  font-size: .85rem;
+  border: 1px solid transparent;
+}
+.badge.ok { background: #052e2b; color: #34d399; border-color: #10b981; }
+.badge.warn { background: #3b1d1d; color: var(--danger); border-color: #ef4444; }
+.badge.muted { background: var(--card); color: var(--muted); border-color: var(--border); }
+
+ul.todo-list { list-style: none; margin: 0; padding: 0; }
+ul.todo-list li {
   display: flex; align-items: center; gap: .6rem;
   padding: .5rem 0; border-bottom: 1px solid var(--border);
 }
-ul#todo-list li.completed span { text-decoration: line-through; color: var(--muted); }
-ul#todo-list li span { flex: 1; }
-ul#todo-list li button { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: .2rem .5rem; }
+ul.todo-list li.completed span { text-decoration: line-through; color: var(--muted); }
+ul.todo-list li span { flex: 1; }
+ul.todo-list li button { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: .2rem .5rem; }
 
 .config-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 fieldset { border: 1px solid var(--border); border-radius: .5rem; display: flex; flex-direction: column; gap: .5rem; }
